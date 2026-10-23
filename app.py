@@ -23,7 +23,7 @@ from backend.forecast import (
     validate_crop,
     validate_horizon,
 )
-from backend.llm import fallback_advice, llm_advice, seasonal_analysis
+from backend.llm import fallback_advice, get_api_key, llm_advice, seasonal_analysis
 from backend.market import get_crop_display_label, get_crop_info
 
 # Configure page layout and aesthetics
@@ -116,7 +116,7 @@ def main() -> None:
         st.info(f"💡 **সংরক্ষণ টিপস:** {crop_info['storage_tip']}")
 
         st.markdown("---")
-        api_configured = bool(os.getenv("GEMINI_API_KEY") or os.getenv("gemini_api_key"))
+        api_configured = bool(get_api_key())
         if api_configured:
             st.success("🟢 Gemini 2.0 AI ইঞ্জিন সক্রিয়")
         else:

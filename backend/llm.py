@@ -59,6 +59,23 @@ def _load_dotenv() -> None:
             os.environ[key] = value
 
 
+def get_api_key() -> str:
+    """Safely retrieve Gemini API key from environment, Streamlit secrets, or .env."""
+    _load_dotenv()
+    key = os.getenv("GEMINI_API_KEY") or os.getenv("gemini_api_key") or ""
+    if not key:
+        try:
+            import streamlit as st
+            if hasattr(st, "secrets"):
+                if "GEMINI_API_KEY" in st.secrets:
+                    key = str(st.secrets["GEMINI_API_KEY"])
+                elif "gemini_api_key" in st.secrets:
+                    key = str(st.secrets["gemini_api_key"])
+        except Exception:
+            pass
+    return key.strip()
+
+
 def seasonal_analysis(series: pd.Series) -> Dict[str, Any]:
     """Return calendar-month price statistics and actionable seasonality facts."""
     clean = pd.to_numeric(series, errors="coerce").dropna()
@@ -162,10 +179,7 @@ def llm_advice(
     - Transient retry: Retries on 429 (rate-limit) and 503 (service unavailable) with exponential backoff.
     - Fallback guarantee: Never crashes the user interface; smoothly falls back to deterministic local advice.
     """
-    _load_dotenv()
-    api_key = api_key_override if api_key_override is not None else (
-        os.getenv("GEMINI_API_KEY") or os.getenv("gemini_api_key")
-    )
+    api_key = api_key_override if api_key_override is not None else get_api_key()
 
     if not api_key or not api_key.strip():
         # Fallback cleanly when API key is not configured
