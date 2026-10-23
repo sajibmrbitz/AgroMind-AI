@@ -177,12 +177,13 @@ def llm_advice(
     crop: str,
     summary: Dict[str, Any],
     max_retries: int = 2,
-    timeout: float = 15.0,
+    timeout: float = 20.0,
     api_key_override: Optional[str] = None,
 ) -> str:
     """Generate Bengali advice using Gemini API with safe header auth, multi-model fallback, and offline backup.
 
     - Protects secrets: Uses `x-goog-api-key` header to avoid exposing API keys in URLs or logs.
+    - Generous token budget: 2500 maxOutputTokens to prevent abrupt truncation in Bengali.
     - Multi-model resilience: Tries current production models (e.g., gemini-3-flash-preview, gemini-2.5-pro).
     - Transient retry: Retries on 429 (rate-limit) and 503 (service unavailable) with exponential backoff.
     - Fallback guarantee: Smoothly falls back to deterministic local advice if external network fails.
@@ -212,17 +213,17 @@ def llm_advice(
 
     prompt = (
         "You are an expert senior agricultural economist and agricultural market intelligence specialist in Bangladesh. "
-        "Analyze the provided aggregate historical price statistics and formulate a rigorous, professional, executive-level market advisory in formal standard Bengali (প্রমিত বাংলা). "
-        "Strict Guidelines:\n"
-        "1. Tone: Highly professional, objective, authoritative yet practical (like Bangladesh Agricultural Research Council or Department of Agricultural Marketing).\n"
-        "2. Avoid colloquial, informal, or clumsy Bengali phrases. Use precise economic and agronomic terminology (e.g., মৌসুমি মূল্য চক্র, বাজার স্থিতিশীলতা, খামার প্রান্তিক দর, সরবরাহ ব্যবস্থাপনা, ঝুঁকি প্রশমন).\n"
-        "3. Provide exactly:\n"
-        "   - **মৌসুমি গতিপ্রকৃতি (Seasonal Dynamics)**\n"
-        "   - **সাম্প্রতিক বাজার গতিশীলতা (Recent Market Momentum)**\n"
-        "   - **কৌশলগত বাণিজ্যিক সুপারিশ (Strategic Recommendations)** (two concrete steps: storage/phased marketing)\n"
-        "   - **ঝুঁকি মূল্যায়ন (Risk Assessment)**\n"
+        "Analyze the provided aggregate historical price statistics and formulate a complete, rigorous, professional market advisory in formal standard Bengali (প্রমিত বাংলা). "
+        "Formatting & Style Rules:\n"
+        "1. Do NOT write letters, sender/receiver headers ('বিষয়:', 'প্রেরক:'), or pleasantries.\n"
+        "2. Directly start with structured bullet points using clear bold headers:\n"
+        "   * **বাজারের বর্তমান অবস্থা ও প্রবণতা:** Analysis of recent price changes and current level.\n"
+        "   * **মৌসুমি মূল্য চক্র (Seasonality Dynamics):** Explanation of historical peak and low months with average prices.\n"
+        "   * **সংগ্রহ ও মজুদ কৌশল:** Practical timing for phased procurement, storage, or phased selling.\n"
+        "   * **ঝুঁকি মূল্যায়ন ও সতর্কতা:** Risk management considerations (e.g., farmgate vs retail margins, perishability).\n"
+        "3. Tone: Highly professional, objective, and authoritative.\n"
         "4. Price units must be explicitly stated as BDT/kg (টাকা/কেজি).\n"
-        "5. Include a brief institutional disclaimer stating this is data-driven statistical guidance without speculative guarantee.\n\n"
+        "5. Conclude cleanly without getting cut off.\n\n"
         f"Input Data:\n{json.dumps(compact_stats, ensure_ascii=False)}"
     )
 
@@ -230,7 +231,7 @@ def llm_advice(
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": 0.2,
-            "maxOutputTokens": 650,
+            "maxOutputTokens": 2500,
         },
     }
 
@@ -275,7 +276,6 @@ def llm_advice(
                     backoff_time = (2 ** attempt) * 1.0 + random.uniform(0.1, 0.4)
                     time.sleep(backoff_time)
                     continue
-                # For non-transient or exhausted retries, try next candidate model
                 break
             except (URLError, TimeoutError, json.JSONDecodeError, KeyError, IndexError, RuntimeError) as exc:
                 if attempt < max_retries and isinstance(exc, (URLError, TimeoutError)):
