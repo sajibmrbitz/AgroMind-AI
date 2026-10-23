@@ -97,6 +97,15 @@ class TestDeterministicFallbackAdvice(unittest.TestCase):
         self.assertIn("পরিসংখ্যানগত দিকনির্দেশনা", advice)
 
     @patch("backend.llm.urlopen")
+    def test_fallback_english(self, mock_urlopen):
+        advice_en = fallback_advice("garlic", self.mock_summary, lang="en")
+        mock_urlopen.assert_not_called()
+        self.assertIn("Garlic", advice_en)
+        self.assertIn("July", advice_en)
+        self.assertIn("January", advice_en)
+        self.assertIn("Seasonality Profile", advice_en)
+
+    @patch("backend.llm.urlopen")
     def test_llm_advice_defaults_to_fallback_when_no_api_key(self, mock_urlopen):
         """When no key is configured, llm_advice returns deterministic advice without network call."""
         advice = llm_advice("chickpea", self.mock_summary, api_key_override="")

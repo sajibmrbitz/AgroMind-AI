@@ -22,10 +22,14 @@ class TestMarketMetadata(unittest.TestCase):
                 self.assertIn(k, info)
                 self.assertTrue(len(str(info[k])) > 0)
 
-    def test_get_crop_display_label(self):
-        label = get_crop_display_label("garlic")
-        self.assertIn("রসুন", label)
-        self.assertIn("Garlic", label)
+    def test_get_crop_display_label_bilingual(self):
+        label_bn = get_crop_display_label("garlic", lang="bn")
+        self.assertIn("রসুন", label_bn)
+        self.assertIn("Garlic", label_bn)
+
+        label_en = get_crop_display_label("garlic", lang="en")
+        self.assertIn("Garlic", label_en)
+        self.assertIn("রসুন", label_en)
 
     def test_invalid_crop_raises_error(self):
         with self.assertRaises(ValueError):
