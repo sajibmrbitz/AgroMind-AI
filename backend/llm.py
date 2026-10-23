@@ -1,8 +1,9 @@
 """Seasonality analysis and resilient Gemini-powered Bengali advisory engine.
 
-Provides calendar-month price seasonality calculations, safe Gemini 2.0 Flash integration
-with header-based authentication, exponential backoff for transient errors, and a deterministic
-local Bengali advisory fallback that functions completely offline without external network calls.
+Provides calendar-month price seasonality calculations, safe Gemini integration
+with header-based authentication, dynamic model resolution with automated fallback,
+exponential backoff for transient errors, and a deterministic local Bengali advisory fallback
+that functions completely offline without external network calls.
 """
 
 from __future__ import annotations
@@ -31,7 +32,8 @@ MONTH_NAMES_BN = {
     9: "সেপ্টেম্বর", 10: "অক্টোবর", 11: "নভেম্বর", 12: "ডিসেম্বর",
 }
 
-DEFAULT_MODEL = "gemini-2.0-flash"
+DEFAULT_MODEL = "gemini-3-flash-preview"
+FALLBACK_MODELS = ["gemini-3-flash-preview", "gemini-2.5-pro", "gemini-3.8-flash"]
 
 
 def _load_dotenv() -> None:
@@ -178,19 +180,24 @@ def llm_advice(
     timeout: float = 15.0,
     api_key_override: Optional[str] = None,
 ) -> str:
-    """Generate Bengali advice using Gemini API with safe header auth and deterministic fallback.
+    """Generate Bengali advice using Gemini API with safe header auth, multi-model fallback, and offline backup.
 
     - Protects secrets: Uses `x-goog-api-key` header to avoid exposing API keys in URLs or logs.
+    - Multi-model resilience: Tries current production models (e.g., gemini-3-flash-preview, gemini-2.5-pro).
     - Transient retry: Retries on 429 (rate-limit) and 503 (service unavailable) with exponential backoff.
-    - Fallback guarantee: Never crashes the user interface; smoothly falls back to deterministic local advice.
+    - Fallback guarantee: Smoothly falls back to deterministic local advice if external network fails.
     """
     api_key = api_key_override if api_key_override is not None else get_api_key()
 
     if not api_key or not api_key.strip():
         return fallback_advice(crop, summary)
 
-    model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL).strip()
-    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{quote(model, safe='')}:generateContent"
+    # Candidate models to try in priority order
+    configured_model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL).strip()
+    candidate_models: List[str] = []
+    for candidate in [configured_model] + FALLBACK_MODELS:
+        if candidate and candidate not in candidate_models:
+            candidate_models.append(candidate)
 
     compact_stats = {
         "crop": crop,
@@ -233,45 +240,51 @@ def llm_advice(
         "x-goog-api-key": api_key.strip(),
     }
 
-    last_error: Optional[Exception] = None
+    for model in candidate_models:
+        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{quote(model, safe='')}:generateContent"
 
-    for attempt in range(max_retries + 1):
-        request = Request(endpoint, data=req_data, headers=headers, method="POST")
-        try:
-            with urlopen(request, timeout=timeout) as response:
-                resp_bytes = response.read()
-                resp_json = json.loads(resp_bytes.decode("utf-8"))
+        for attempt in range(max_retries + 1):
+            request = Request(endpoint, data=req_data, headers=headers, method="POST")
+            try:
+                with urlopen(request, timeout=timeout) as response:
+                    resp_bytes = response.read()
+                    resp_json = json.loads(resp_bytes.decode("utf-8"))
 
-            candidates = resp_json.get("candidates", [])
-            if not candidates:
-                raise RuntimeError("Gemini returned an empty candidate list.")
+                candidates = resp_json.get("candidates", [])
+                if not candidates:
+                    raise RuntimeError("Gemini returned an empty candidate list.")
 
-            parts = candidates[0].get("content", {}).get("parts", [])
-            if not parts:
-                raise RuntimeError("Gemini returned an empty content body.")
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if not parts:
+                    raise RuntimeError("Gemini returned an empty content body.")
 
-            text = parts[0].get("text", "").strip()
-            if not text:
-                raise RuntimeError("Gemini returned blank advisory text.")
+                text = parts[0].get("text", "").strip()
+                if not text:
+                    raise RuntimeError("Gemini returned blank advisory text.")
 
-            return f"🤖 **কৃষি-অর্থনৈতিক বাজার বুদ্ধিমত্তা (Gemini 2.0 Flash প্রস্তুতকৃত):**\n\n{text}"
+                # Successfully generated from active Gemini model
+                display_model = "Gemini AI" if "preview" in model else model
+                return f"🤖 **কৃষি-অর্থনৈতিক বাজার বুদ্ধিমত্তা ({display_model} প্রস্তুতকৃত):**\n\n{text}"
 
-        except HTTPError as exc:
-            last_error = exc
-            if exc.code in (429, 500, 502, 503, 504) and attempt < max_retries:
-                backoff_time = (2 ** attempt) * 1.0 + random.uniform(0.1, 0.5)
-                time.sleep(backoff_time)
-                continue
-            break
-        except (URLError, TimeoutError, json.JSONDecodeError, KeyError, IndexError, RuntimeError) as exc:
-            last_error = exc
-            if attempt < max_retries and isinstance(exc, (URLError, TimeoutError)):
-                backoff_time = (2 ** attempt) * 0.8 + random.uniform(0.1, 0.4)
-                time.sleep(backoff_time)
-                continue
-            break
+            except HTTPError as exc:
+                # 404 indicates model deprecation/unavailability -> try next model in candidate_models
+                if exc.code == 404:
+                    break
+                # Transient HTTP status codes: 429, 500, 502, 503, 504
+                if exc.code in (429, 500, 502, 503, 504) and attempt < max_retries:
+                    backoff_time = (2 ** attempt) * 1.0 + random.uniform(0.1, 0.4)
+                    time.sleep(backoff_time)
+                    continue
+                # For non-transient or exhausted retries, try next candidate model
+                break
+            except (URLError, TimeoutError, json.JSONDecodeError, KeyError, IndexError, RuntimeError) as exc:
+                if attempt < max_retries and isinstance(exc, (URLError, TimeoutError)):
+                    backoff_time = (2 ** attempt) * 0.8 + random.uniform(0.1, 0.3)
+                    time.sleep(backoff_time)
+                    continue
+                break
 
-    # If Gemini failed, smoothly fall back to deterministic advice without breaking the UI
+    # If all models in the candidate list failed, smoothly fall back to deterministic advice
     deterministic = fallback_advice(crop, summary)
     error_note = (
         f"\n\n*(বিজ্ঞপ্তি: Gemini এআই সার্ভারের সাথে সংযোগ সম্ভব না হওয়ায় "
