@@ -20,9 +20,9 @@ AgroMind AI is a farmer-centric agricultural price intelligence and decision-sup
 - **SDG Alignment:** Directly advances UN Sustainable Development Goals: SDG 1 (No Poverty), SDG 2 (Zero Hunger), SDG 8 (Decent Work & Economic Growth), and SDG 10 (Reduced Inequalities).
 
 ### 3. System Architecture & Modularity
-- **Frontend Layer (`app.py`):** Lightweight, responsive Streamlit dashboard supporting desktop and mobile smartphone field views, bilingual (বাংলা / English) language switcher, first-landing commodity selection pop-up dialog (`@st.dialog`), interactive price visualizations with 80% confidence corridor bands, and one-click CSV data export for offline farm planning.
+- **Frontend Layer (`app.py`):** Lightweight, responsive Streamlit dashboard supporting desktop and mobile smartphone field views, bilingual (বাংলা / English) language switcher, first-landing commodity selection pop-up dialog (`@st.dialog`), Price Volatility & Risk Meter (CV%), Farmgate Revenue & Profit Calculator, All-5-Crops Comparative Market Snapshot, interactive price visualizations with 80% confidence corridor bands, and one-click CSV data export for offline farm planning.
 - **Forecasting Engine (`backend/forecast.py`):** Data cleaning (treating portal reporting zeros as missing, daily reindexing, forward/backward filling), ARIMA(1,1,1) with 80% confidence bands, Naive persistence baseline, input validation, and walk-forward cross-validation (MAE comparison).
-- **Market Dynamics & Metadata (`backend/market.py`):** Crop seasonality profiles, Bengali vernacular names, typical sowing/harvesting calendars (রবি/খরিফ), volatility classifications, key cultivation districts, storage advisories, and structured data export utilities.
+- **Market Dynamics & Metadata (`backend/market.py`):** Crop seasonality profiles, Bengali vernacular names, typical sowing/harvesting calendars (রবি/খরিফ), volatility metrics (CV%), 5-crop comparison aggregations, key cultivation districts, storage advisories, and structured data export utilities.
 - **Hybrid Intelligence Layer (`backend/llm.py`):** 
   - Dual-mode architecture: Google Gemini 2.0 Flash for natural Bengali advisory + Deterministic statistical rule-based offline fallback.
   - Safe API communication: Header-based authentication (`x-goog-api-key`), exponential backoff retry for transient 429/503 errors, bounded timeouts.
@@ -49,7 +49,7 @@ To prevent misleading farmers, AgroMind AI benchmarks ARIMA(1,1,1) against a Nai
 - **Containerization:** Production Dockerfile with multi-stage caching, non-root user conventions, and healthcheck endpoints (`/_stcore/health`).
 - **Dependencies:** Constrained in `requirements.txt` (numpy, pandas, statsmodels, streamlit).
 - **Environment:** Safe `.env.example` template provided.
-- **Automated Verification:** 26 automated unit and smoke tests running in 3.4 seconds with 100% pass rate.
+- **Automated Verification:** 29 automated unit and smoke tests with 100% pass rate.
 
 ---
 

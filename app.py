@@ -3,13 +3,14 @@
 International AI Congress 2026 Submission Edition.
 Provides bilingual (Bengali & English) agricultural price intelligence, interactive
 commodity selection pop-up dialog, ARIMA forecasting with confidence intervals,
-calendar seasonality decomposition, Gemini AI / local deterministic advisory, and CSV data export.
+calendar seasonality decomposition, Gemini AI / local deterministic advisory,
+volatility risk meter, farmgate profit calculator, 5-crop market snapshot, and CSV data export.
 """
 
 from __future__ import annotations
 
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 import numpy as np
 import pandas as pd
@@ -24,7 +25,12 @@ from backend.forecast import (
     validate_horizon,
 )
 from backend.llm import fallback_advice, get_api_key, llm_advice, seasonal_analysis
-from backend.market import get_crop_display_label, get_crop_info
+from backend.market import (
+    calculate_volatility_metrics,
+    get_all_crops_summary,
+    get_crop_display_label,
+    get_crop_info,
+)
 
 # Configure page layout and aesthetics
 st.set_page_config(
@@ -65,7 +71,7 @@ st.markdown(
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
         gap: 14px;
-        margin: 1rem 0 1.5rem 0;
+        margin: 1rem 0 1.2rem 0;
     }
     .metric-box {
         background: rgba(30, 41, 59, 0.55);
@@ -110,13 +116,32 @@ st.markdown(
         margin-top: 4px;
     }
 
+    /* Feature Cards: Volatility & Calculator */
+    .feature-card {
+        background: rgba(30, 41, 59, 0.55);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 18px;
+        margin-bottom: 1.5rem;
+        backdrop-filter: blur(8px);
+    }
+    .feature-title {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #38bdf8;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
     /* Model Governance Banner */
     .governance-card {
         background: rgba(15, 23, 42, 0.7);
         border: 1px solid rgba(56, 189, 248, 0.25);
         border-radius: 10px;
         padding: 12px 18px;
-        margin-bottom: 1.5rem;
+        margin-bottom: 1.2rem;
         display: flex;
         align-items: center;
         gap: 12px;
@@ -232,12 +257,15 @@ TEXTS = {
         "historical_avg": "ঐতিহাসিক গড়:",
         "momentum_90d": "ত্রৈমাসিক মূল্য প্রবণতা (90-Day Momentum)",
         "momentum_sub": "পূর্ববর্তী ত্রৈমাসিকের তুলনায় পরিবর্তন",
+        "volatility_card_title": "📊 মূল্য অস্থিরতা ও ঝুঁকি সূচক (Volatility & Risk Meter)",
+        "calculator_title": "💰 খামার রাজস্ব ও সম্ভাব্য লাভ-ক্ষতি ক্যালকুলেটর (Farmgate Profit Estimator)",
+        "all_crops_title": "🌐 একনজরে ৫টি ফসলের তুলনামূলক বাজার চিত্র (All 5 Crops Market Snapshot)",
         "chart_title": "দৈনিক বাজারদর ও আগামী {horizon} দিনের পূর্বাভাস",
         "chart_hist": "ঐতিহাসিক দর (Historical)",
         "chart_forecast": "প্রাক্কলিত দর (ARIMA Forecast)",
         "chart_lower": "৮০% নিম্ন আস্থার সীমা (Lower Bound)",
         "chart_upper": "৮০% উচ্চ আস্থার সীমা (Upper Bound)",
-        "expander_table": "🔍 পূর্বাভাসের পূর্ণাঙ্গ উপাত্ত সারণি ও রফতানি (Forecast Dataset & Table)",
+        "expander_table": "🔍 পূর্বাভাস উপাত্ত সারণি ও রফতানি (Forecast Dataset & Table)",
         "download_forecast": "📥 পূর্বাভাসের উপাত্ত ডাউনলোড করুন (Download Forecast CSV)",
         "seasonality_header": "📅 মাসভিত্তিক মৌসুমি মূল্য চক্র (Monthly Seasonality Index)",
         "download_seasonality": "📥 মৌসুমি সূচক ডেটাসেট ডাউনলোড (Download Seasonality CSV)",
@@ -274,6 +302,9 @@ TEXTS = {
         "historical_avg": "Historical Mean:",
         "momentum_90d": "Quarterly Price Momentum (90d)",
         "momentum_sub": "Relative to Previous Quarter",
+        "volatility_card_title": "📊 Price Volatility & Risk Meter",
+        "calculator_title": "💰 Farmgate Revenue & Profit/Loss Estimator",
+        "all_crops_title": "🌐 All 5 Crops Comparative Market Snapshot",
         "chart_title": "Daily Price Dynamics & Next {horizon}-Day Forecast",
         "chart_hist": "Historical Price",
         "chart_forecast": "Forecast (ARIMA)",
@@ -306,6 +337,12 @@ def get_cached_evaluation(crop: str, horizon: int) -> Dict[str, Any]:
     return evaluate(crop, horizon=horizon, n_origins=15)
 
 
+@st.cache_data(show_spinner=False)
+def get_cached_all_crops(horizon: int) -> List[Dict[str, Any]]:
+    """Cache multi-crop comparison metrics."""
+    return get_all_crops_summary(horizon=horizon)
+
+
 # Landing Commodity Selection Popup Dialog (Streamlit native @st.dialog)
 @st.dialog("🌾 কৃষিপণ্য নির্বাচন / Commodity Selection", width="large")
 def show_crop_selection_dialog(lang: str = "bn") -> None:
@@ -331,7 +368,6 @@ def show_crop_selection_dialog(lang: str = "bn") -> None:
             unsafe_allow_html=True,
         )
 
-    # 5 Interactive Crop Selection Cards
     cols = st.columns(len(CROPS))
     for i, c in enumerate(CROPS):
         info = get_crop_info(c)
@@ -458,6 +494,7 @@ def main() -> None:
             summary = seasonal_analysis(history)
             forecast, lower, upper, meta = arima_forecast(history, horizon)
             eval_metrics = get_cached_evaluation(cur_crop, horizon)
+            vol_metrics = calculate_volatility_metrics(history)
         except (FileNotFoundError, ValueError, KeyError) as exc:
             st.error(f"⚠️ Error during data modeling: {exc}")
             st.stop()
@@ -505,6 +542,105 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
+    # NEW FEATURE 1 & 2: Volatility Risk Meter & Farmgate Profit Calculator in 2 columns
+    feat_col1, feat_col2 = st.columns([1, 1], gap="medium")
+
+    with feat_col1:
+        # Volatility Risk Meter
+        risk_label = vol_metrics["risk_label_en"] if st.session_state["lang"] == "en" else vol_metrics["risk_label_bn"]
+        risk_desc = vol_metrics["desc_en"] if st.session_state["lang"] == "en" else vol_metrics["desc_bn"]
+        st.markdown(
+            f"""
+            <div class="feature-card">
+                <div class="feature-title">📊 {T['volatility_card_title']}</div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                    <span style="font-size: 0.92rem; color: #94a3b8;">{"Coefficient of Variation (CV%):" if st.session_state["lang"] == "en" else "মূল্য অস্থিরতা সহগ (CV%):"}</span>
+                    <span style="font-weight: 700; color: #f8fafc; font-size: 1.1rem;">{vol_metrics['cv_pct']}%</span>
+                </div>
+                <div style="margin-bottom: 10px;">
+                    <span style="background: rgba(255,255,255,0.06); border: 1px solid {vol_metrics['risk_color']}; color: {vol_metrics['risk_color']}; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.88rem;">
+                        ● {risk_label}
+                    </span>
+                </div>
+                <div style="font-size: 0.85rem; color: #cbd5e1; margin-bottom: 6px;">
+                    {risk_desc}
+                </div>
+                <div style="font-size: 0.80rem; color: #64748b;">
+                    {"Historical Range:" if st.session_state["lang"] == "en" else "ঐতিহাসিক মূল্য বিস্তার:"} {vol_metrics['min_price']} - {vol_metrics['max_price']} BDT/kg (Spread: {vol_metrics['spread']} BDT)
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with feat_col2:
+        # Farmgate Profit & Revenue Estimator
+        with st.container():
+            st.markdown(
+                f"""
+                <div class="feature-card" style="margin-bottom: 0px; padding-bottom: 10px;">
+                    <div class="feature-title">💰 {T['calculator_title']}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            calc_c1, calc_c2 = st.columns(2)
+            with calc_c1:
+                weight_unit = st.selectbox(
+                    "একক / Unit:" if st.session_state["lang"] == "bn" else "Unit:",
+                    ["কেজি (kg)", "মণ (Mound = 40kg)"],
+                    index=0,
+                )
+                qty_input = st.number_input(
+                    "পরিমাণ / Quantity:" if st.session_state["lang"] == "bn" else "Quantity:",
+                    min_value=10,
+                    max_value=100000,
+                    value=100,
+                    step=10,
+                )
+            with calc_c2:
+                margin_deduct = st.slider(
+                    "খামার প্রান্তিক খরচ / Deduction (%):" if st.session_state["lang"] == "bn" else "Intermediary Margin (%):",
+                    min_value=5,
+                    max_value=35,
+                    value=20,
+                    help="Deduction for transportation, arat commission, and grading difference.",
+                )
+
+            # Calculations
+            effective_kg = qty_input * (40 if "মণ" in weight_unit or "Mound" in weight_unit else 1)
+            margin_multiplier = (100 - margin_deduct) / 100.0
+            farmgate_today = history.iloc[-1] * margin_multiplier
+            farmgate_future = forecast[-1] * margin_multiplier
+
+            rev_today = effective_kg * farmgate_today
+            rev_future = effective_kg * farmgate_future
+            net_diff = rev_future - rev_today
+            net_diff_pct = (net_diff / rev_today * 100) if rev_today > 0 else 0.0
+
+            diff_color = "#34d399" if net_diff >= 0 else "#f87171"
+            diff_sign = "+" if net_diff >= 0 else ""
+
+            st.markdown(
+                f"""
+                <div style="background: rgba(15,23,42,0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 14px; margin-top: 6px; margin-bottom: 1.5rem;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.88rem; margin-bottom: 4px;">
+                        <span style="color: #94a3b8;">{"Today's Farmgate Value:" if st.session_state["lang"] == "en" else "আজকের আনুমানিক বিক্রয়মূল্য:"}</span>
+                        <strong style="color: #f8fafc;">{rev_today:,.0f} BDT</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.88rem; margin-bottom: 4px;">
+                        <span style="color: #94a3b8;">{f"Value at Horizon ({horizon}d):" if st.session_state["lang"] == "en" else f"{horizon} দিন পর সম্ভাব্য বিক্রয়মূল্য:"}</span>
+                        <strong style="color: #f8fafc;">{rev_future:,.0f} BDT</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.92rem; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
+                        <span style="color: #e2e8f0; font-weight: 600;">{"Projected Gain / Loss:" if st.session_state["lang"] == "en" else "প্রত্যাশিত নিট লাভ / ক্ষতি:"}</span>
+                        <strong style="color: {diff_color}; font-size: 1rem;">{diff_sign}{net_diff:,.0f} BDT ({diff_sign}{net_diff_pct:.1f}%)</strong>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
     # Scientific Model Governance & Baseline Comparison Banner
     rec_model = eval_metrics["recommended_model"]
     if st.session_state["lang"] == "en":
@@ -549,6 +685,43 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
+
+    # NEW FEATURE 3: All 5 Crops Comparative Market Snapshot (Zero AI calls)
+    with st.expander(T["all_crops_title"]):
+        all_crops_data = get_cached_all_crops(horizon=horizon)
+        if st.session_state["lang"] == "en":
+            overview_df = pd.DataFrame(
+                [
+                    {
+                        "Commodity": f"{x['icon']} {x['name_en']}",
+                        "Latest (BDT/kg)": x["latest_price"],
+                        "Historical Mean": x["historical_mean"],
+                        "90-Day Momentum": f"{x['trend_90d']:+.1f}%",
+                        "Peak Month": x["peak_month_en"],
+                        "Volatility CV%": f"{x['cv_pct']}%",
+                        "Risk Profile": x["risk_en"],
+                        "Primary Model": x["recommended_model"],
+                    }
+                    for x in all_crops_data
+                ]
+            )
+        else:
+            overview_df = pd.DataFrame(
+                [
+                    {
+                        "কৃষিপণ্য": f"{x['icon']} {x['name_bn']}",
+                        "সর্বশেষ দর (টাকা)": x["latest_price"],
+                        "ঐতিহাসিক গড়": x["historical_mean"],
+                        "৯০ দিনের গতিশীলতা": f"{x['trend_90d']:+.1f}%",
+                        "সর্বোচ্চ মৌসুম": x["peak_month_bn"],
+                        "অস্থিরতা CV%": f"{x['cv_pct']}%",
+                        "ঝুঁকির মাত্রা": x["risk_bn"],
+                        "প্রস্তাবিত মডেল": x["recommended_model"],
+                    }
+                    for x in all_crops_data
+                ]
+            )
+        st.dataframe(overview_df, use_container_width=True, hide_index=True)
 
     # Forecast Section Title
     crop_header_name = f"{crop_info['en_name']} ({crop_info['bn_name']})" if st.session_state["lang"] == "en" else f"{crop_info['bn_name']} ({crop_info['en_name']})"

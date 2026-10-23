@@ -7,6 +7,9 @@ volatility metrics, and agronomic guidance aligned with institutional standards.
 from __future__ import annotations
 from typing import Dict, Any, List
 
+import numpy as np
+import pandas as pd
+
 CROP_METADATA: Dict[str, Dict[str, Any]] = {
     "garlic": {
         "en_name": "Garlic",
@@ -122,3 +125,85 @@ def get_crop_display_label(crop: str, lang: str = "bn") -> str:
 def list_available_crops() -> List[str]:
     """Return list of supported crop keys."""
     return list(CROP_METADATA.keys())
+
+
+def calculate_volatility_metrics(series: pd.Series) -> Dict[str, Any]:
+    """Compute mathematical volatility and risk indicators for a price time series."""
+    clean = pd.to_numeric(series, errors="coerce").dropna()
+    clean = clean[clean > 0]
+    if clean.empty:
+        raise ValueError("Price series must contain at least one positive value.")
+
+    mean_val = float(clean.mean())
+    std_val = float(clean.std()) if len(clean) > 1 else 0.0
+    cv_pct = (std_val / mean_val * 100.0) if mean_val > 0 else 0.0
+    min_val = float(clean.min())
+    max_val = float(clean.max())
+    spread = max_val - min_val
+
+    if cv_pct < 18.0:
+        risk_label_bn = "স্থিতিশীল (স্বল্প ঝুঁকি)"
+        risk_label_en = "Stable (Low Risk)"
+        risk_color = "#34d399"  # Emerald green
+        desc_bn = "মূল্য পরিবর্তন তুলনামূলকভাবে স্থিতিশীল এবং অনুমানযোগ্য।"
+        desc_en = "Price fluctuations are relatively stable and historically predictable."
+    elif cv_pct < 35.0:
+        risk_label_bn = "মাঝারি অস্থিরতা (সতর্কতা কাম্য)"
+        risk_label_en = "Moderate Volatility (Cautious)"
+        risk_color = "#f59e0b"  # Amber
+        desc_bn = "মৌসুমভেদে দৃশ্যমান মূল্য ব্যবধান তৈরি হয়; বাজার যাচাই করে বিক্রি করা সমীচীন।"
+        desc_en = "Seasonal variations create noticeable price swings; staged marketing recommended."
+    else:
+        risk_label_bn = "উচ্চ অস্থিরতা (উচ্চ ঝুঁকি)"
+        risk_label_en = "High Volatility (High Risk)"
+        risk_color = "#ef4444"  # Red
+        desc_bn = "অত্যধিক মূল্য ওঠানামা দেখা যায়; দ্রুত বিক্রয় বা সতর্ক গুদামজাতকরণ আবশ্যক।"
+        desc_en = "Severe price swings observed; swift dispatch or climate-controlled storage required."
+
+    return {
+        "mean_price": round(mean_val, 2),
+        "std_price": round(std_val, 2),
+        "cv_pct": round(cv_pct, 1),
+        "min_price": round(min_val, 2),
+        "max_price": round(max_val, 2),
+        "spread": round(spread, 2),
+        "risk_label_bn": risk_label_bn,
+        "risk_label_en": risk_label_en,
+        "risk_color": risk_color,
+        "desc_bn": desc_bn,
+        "desc_en": desc_en,
+    }
+
+
+def get_all_crops_summary(horizon: int = 14) -> List[Dict[str, Any]]:
+    """Return consolidated comparison metrics for all 5 crops without AI calls."""
+    from backend.forecast import CROPS, evaluate, load_series
+    from backend.llm import seasonal_analysis
+
+    summary_list: List[Dict[str, Any]] = []
+    for c in CROPS:
+        info = get_crop_info(c)
+        s = load_series(c)
+        seas = seasonal_analysis(s)
+        vol = calculate_volatility_metrics(s)
+        ev = evaluate(c, horizon=horizon, n_origins=15)
+
+        summary_list.append({
+            "crop": c,
+            "icon": info["icon"],
+            "name_bn": info["bn_name"],
+            "name_en": info["en_name"],
+            "latest_price": round(float(s.iloc[-1]), 2),
+            "historical_mean": seas["overall_average"],
+            "trend_90d": seas["recent_trend_pct"],
+            "peak_month_bn": seas["peak_month_bn"],
+            "peak_month_en": seas["peak_month"],
+            "cv_pct": vol["cv_pct"],
+            "risk_bn": vol["risk_label_bn"],
+            "risk_en": vol["risk_label_en"],
+            "risk_color": vol["risk_color"],
+            "recommended_model": ev["recommended_model"],
+            "arima_mae": ev["arima_mae"],
+            "naive_mae": ev["naive_mae"],
+        })
+    return summary_list
