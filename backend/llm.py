@@ -31,7 +31,6 @@ MONTH_NAMES_BN = {
     9: "সেপ্টেম্বর", 10: "অক্টোবর", 11: "নভেম্বর", 12: "ডিসেম্বর",
 }
 
-# Supported Gemini models in preferred priority order
 DEFAULT_MODEL = "gemini-2.0-flash"
 
 
@@ -54,7 +53,6 @@ def _load_dotenv() -> None:
             continue
         key, value = line.split("=", 1)
         key, value = key.strip(), value.strip().strip("\"'")
-        # Only set if key does not already exist in the environment
         if key and key not in os.environ:
             os.environ[key] = value
 
@@ -138,31 +136,38 @@ def seasonal_analysis(series: pd.Series) -> Dict[str, Any]:
 
 
 def fallback_advice(crop: str, summary: Dict[str, Any]) -> str:
-    """Generate deterministic, expert-validated Bengali advisory without network calls."""
+    """Generate professional, institutional agro-economic advisory in standard Bengali."""
     trend = summary.get("recent_trend_pct", 0.0)
     peak_bn = summary.get("peak_month_bn", summary.get("peak_month", ""))
     low_bn = summary.get("low_month_bn", summary.get("low_month", ""))
     crop_display = crop.replace("_", " ").title()
 
     if trend > 2.0:
-        trend_text = f"সাম্প্রতিক সময়ে বাজারদর ঊর্ধ্বমুখী (প্রায় +{abs(trend):.1f}% বৃদ্ধি পেয়েছে)"
-        action_text = "বর্তমান বাড়তি দরে আপনার মজুদ ফসলের একটি অংশ ধাপে ধাপে বিক্রি করতে পারেন।"
+        trend_analysis = f"বিগত ৯০ দিনের বাজার গতিশীলতায় ঊর্ধ্বমুখী প্রবণতা (+{abs(trend):.1f}%) পরিলক্ষিত হচ্ছে।"
+        action_strategy = (
+            "বর্তমান অনুকূল বাজারমূল্যের সদ্ব্যবহার করতে সংরক্ষিত বা উৎপাদিত ফসলের একাংশ পরিকল্পিতভাবে "
+            "বিপণন করা যেতে পারে। একই সাথে সম্ভাব্য বাজার সংশোধনের ঝুঁকি এড়াতে ধাপে ধাপে সরবরাহ বজায় রাখা যুক্তিসঙ্গত।"
+        )
     elif trend < -2.0:
-        trend_text = f"সাম্প্রতিক সময়ে বাজারদর নিম্নমুখী (প্রায় -{abs(trend):.1f}% হ্রাস পেয়েছে)"
-        action_text = "সংরক্ষণ সুবিধা থাকলে এখনই তাড়াহুড়ো করে সব বিক্রি না করে বাজার স্থিতিশীল হওয়ার অপেক্ষা করুন।"
+        trend_analysis = f"বিগত ৯০ দিনের বাজার গতিশীলতায় নিম্নমুখী প্রবণতা (-{abs(trend):.1f}%) দৃশ্যমান।"
+        action_strategy = (
+            "উৎপাদনকারী কৃষক ও ব্যবসায়ীদের তাৎক্ষণিক লোকসানে এককালীন বিক্রয় পরিহার করে উপযুক্ত গুদামজাতকরণ "
+            "বা মানসম্মত সাময়িক সংরক্ষণের মাধ্যমে বাজার স্থিতিশীল হওয়া পর্যন্ত অপেক্ষমাণ থাকার পরামর্শ দেওয়া হচ্ছে।"
+        )
     else:
-        trend_text = "সাম্প্রতিক বাজারদর মোটামুটি স্থিতিশীল অবস্থায় রয়েছে"
-        action_text = "নিয়মিত স্থানীয় মোকামের দাম যাচাই করে স্বাভাবিক গতিতে পণ্য সরবরাহ বজায় রাখুন।"
+        trend_analysis = "সাম্প্রতিক বাজারমূল্য তুলনামূলকভাবে স্থিতিশীল এবং স্বাভাবিক ঐতিহাসিক সীমার মধ্যে অবস্থান করছে।"
+        action_strategy = (
+            "চাহিদা ও জোগানের ভারসাম্য বজায় রেখে নিয়মিত বিরতিতে স্থানীয় আড়ত ও পাইকারি বাজারে সরবরাহ অব্যাহত রাখা বাঞ্ছনীয়।"
+        )
 
     return (
-        f"🌾 **{crop_display}-এর বাজার পরামর্শ (অফলাইন অ্যালগরিদম ভিত্তিক):**\n\n"
-        f"১. **মৌসুমি বিশ্লেষণ:** ঐতিহাসিকভাবে এই ফসলের সর্বোচ্চ দাম পাওয়া যায় **{peak_bn}** মাসে "
-        f"(গড় {summary['peak_average']:.2f} BDT/kg), এবং সর্বনিম্ন দাম দেখা যায় **{low_bn}** মাসে "
-        f"(গড় {summary['low_average']:.2f} BDT/kg)।\n"
-        f"২. **বর্তমান প্রবণতা:** {trend_text}।\n"
-        f"৩. **ব্যবহারিক সুপারিশ:** {action_text}\n"
-        f"৪. **সতর্কতা:** ফসল তোলার খরচ, পরিবহন ও আবহাওয়া পরিস্থিতির সাথে স্থানীয় পাইকারি আড়তের দর যাচাই করে চূড়ান্ত সিদ্ধান্ত নিন। "
-        f"এটি অতীত ডেটাভিত্তিক পরিসংখ্যানগত দিকনির্দেশনা, নিশ্চিত আর্থিক প্রতিশ্রুতি নয়।"
+        f"📋 **{crop_display} — কৃষি-অর্থনৈতিক বাজার বিশ্লেষণ ও কৌশলগত সুপারিশ:**\n\n"
+        f"• **মৌসুমি চক্র (Seasonality Profile):** ঐতিহাসিক উপাত্ত পর্যালোচনায় দেখা যায়, এই পণ্যের সর্বোচ্চ মূল্য অর্জিত হয় **{peak_bn}** মাসে "
+        f"(গড় {summary['peak_average']:.2f} BDT/kg) এবং সর্বনিম্ন মূল্য পরিলক্ষিত হয় **{low_bn}** মাসে (গড় {summary['low_average']:.2f} BDT/kg)।\n\n"
+        f"• **স্বল্পমেয়াদি মূল্য প্রবণতা:** {trend_analysis}\n\n"
+        f"• **বাণিজ্যিক বিপণন কৌশল:** {action_strategy}\n\n"
+        f"• **ঝুঁকি ব্যবস্থাপনা ও সতর্কতা:** খামার প্রান্তিক বিক্রয়মূল্য, স্থানীয় পরিবহন খরচ এবং জলবায়ু পূর্বাভাস বিবেচনায় রেখে "
+        f"চূড়ান্ত বাণিজ্যিক সিদ্ধান্ত গ্রহণ করুন। এটি ঐতিহাসিক সময়ক্রমিক পরিসংখ্যানগত দিকনির্দেশনা, কোনো নিশ্চয়তামূলক আর্থিক প্রতিশ্রুতি নয়।"
     )
 
 
@@ -182,14 +187,11 @@ def llm_advice(
     api_key = api_key_override if api_key_override is not None else get_api_key()
 
     if not api_key or not api_key.strip():
-        # Fallback cleanly when API key is not configured
         return fallback_advice(crop, summary)
 
     model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL).strip()
-    # Use clean endpoint without query parameters; key is passed safely in header
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{quote(model, safe='')}:generateContent"
 
-    # Minimal, safe payload with aggregate summary statistics only
     compact_stats = {
         "crop": crop,
         "overall_average_bdt_per_kg": summary.get("overall_average"),
@@ -202,13 +204,18 @@ def llm_advice(
     }
 
     prompt = (
-        "You are an agricultural economist and market advisor for Bangladeshi smallholder farmers. "
-        "Analyze the provided aggregate historical price statistics and produce a concise, practical recommendation in Bengali (বাংলা). "
-        "Strict rules:\n"
-        "1. Answer strictly in Bengali with supportive tone.\n"
-        "2. Do not guarantee future prices; emphasize that this is historical seasonal guidance.\n"
-        "3. Provide exactly two actionable recommendations (e.g. storage timing, phased selling, or market monitoring).\n"
-        "4. Mention price units clearly as টাকা/কেজি (BDT/kg).\n\n"
+        "You are an expert senior agricultural economist and agricultural market intelligence specialist in Bangladesh. "
+        "Analyze the provided aggregate historical price statistics and formulate a rigorous, professional, executive-level market advisory in formal standard Bengali (প্রমিত বাংলা). "
+        "Strict Guidelines:\n"
+        "1. Tone: Highly professional, objective, authoritative yet practical (like Bangladesh Agricultural Research Council or Department of Agricultural Marketing).\n"
+        "2. Avoid colloquial, informal, or clumsy Bengali phrases. Use precise economic and agronomic terminology (e.g., মৌসুমি মূল্য চক্র, বাজার স্থিতিশীলতা, খামার প্রান্তিক দর, সরবরাহ ব্যবস্থাপনা, ঝুঁকি প্রশমন).\n"
+        "3. Provide exactly:\n"
+        "   - **মৌসুমি গতিপ্রকৃতি (Seasonal Dynamics)**\n"
+        "   - **সাম্প্রতিক বাজার গতিশীলতা (Recent Market Momentum)**\n"
+        "   - **কৌশলগত বাণিজ্যিক সুপারিশ (Strategic Recommendations)** (two concrete steps: storage/phased marketing)\n"
+        "   - **ঝুঁকি মূল্যায়ন (Risk Assessment)**\n"
+        "4. Price units must be explicitly stated as BDT/kg (টাকা/কেজি).\n"
+        "5. Include a brief institutional disclaimer stating this is data-driven statistical guidance without speculative guarantee.\n\n"
         f"Input Data:\n{json.dumps(compact_stats, ensure_ascii=False)}"
     )
 
@@ -216,7 +223,7 @@ def llm_advice(
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": 0.2,
-            "maxOutputTokens": 600,
+            "maxOutputTokens": 650,
         },
     }
 
@@ -247,16 +254,14 @@ def llm_advice(
             if not text:
                 raise RuntimeError("Gemini returned blank advisory text.")
 
-            return f"🤖 **AgroMind AI পরামর্শ (Gemini 2.0 Flash প্রস্তুতকৃত):**\n\n{text}"
+            return f"🤖 **কৃষি-অর্থনৈতিক বাজার বুদ্ধিমত্তা (Gemini 2.0 Flash প্রস্তুতকৃত):**\n\n{text}"
 
         except HTTPError as exc:
             last_error = exc
-            # Transient HTTP status codes: 429 (Too Many Requests), 500, 502, 503, 504
             if exc.code in (429, 500, 502, 503, 504) and attempt < max_retries:
                 backoff_time = (2 ** attempt) * 1.0 + random.uniform(0.1, 0.5)
                 time.sleep(backoff_time)
                 continue
-            # For 400, 401, 403, 404 or exhausted retries, exit retry loop
             break
         except (URLError, TimeoutError, json.JSONDecodeError, KeyError, IndexError, RuntimeError) as exc:
             last_error = exc
@@ -266,11 +271,10 @@ def llm_advice(
                 continue
             break
 
-    # If Gemini failed due to network/API error, smoothly fall back to deterministic advice
-    # without breaking the application or leaking secrets
+    # If Gemini failed, smoothly fall back to deterministic advice without breaking the UI
     deterministic = fallback_advice(crop, summary)
     error_note = (
-        f"\n\n*(বিজ্ঞপ্তি: Gemini সার্ভার সংযোগে সমস্যা হওয়ায় স্থানীয় ব্যাকআপ অ্যালগরিদম "
-        f"দিয়ে পরামর্শ প্রদর্শন করা হয়েছে।)*"
+        f"\n\n*(বিজ্ঞপ্তি: Gemini এআই সার্ভারের সাথে সংযোগ সম্ভব না হওয়ায় "
+        f"বিকল্প ব্যাকআপ অ্যালগরিদম ভিত্তিক বিশ্লেষণ প্রদর্শিত হয়েছে।)*"
     )
     return deterministic + error_note
